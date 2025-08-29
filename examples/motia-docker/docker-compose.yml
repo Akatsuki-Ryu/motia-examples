@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  motiadev-tailscale:
+    image: tailscale/tailscale:latest
+    container_name: ${TS_HOSTNAME}-tailscale
+    # hostname: ai
+    volumes:
+      - ./tailscale.json:/config/tailscale.json
+      - ./db/tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - sys_module
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
+      - TS_HOSTNAME=${TS_HOSTNAME}
+      - TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:container
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/tailscale.json
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: ${CONTAINER_NAME:-motia-docker-example}
+    network_mode: service:${TS_HOSTNAME}-tailscale
+    # ports:
+      # - "${CONTAINER_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=development
+    # volumes:
+      # Mount source code for development (optional - enable for hot reload)
+      # - .:/app
+      # - /app/node_modules
+      # - /app/python_modules
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
