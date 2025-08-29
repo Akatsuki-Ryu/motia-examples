@@ -23,7 +23,7 @@ services:
   app:
     build: .
     container_name: ${CONTAINER_NAME:-motia-docker-example}
-    network_mode: service:${TS_HOSTNAME}-tailscale
+    network_mode: service:motiadev-tailscale
     # ports:
       # - "${CONTAINER_PORT:-3000}:3000"
     environment:
