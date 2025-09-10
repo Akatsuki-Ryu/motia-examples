@@ -62,10 +62,18 @@ COPY --from=base /app/types ./types
 COPY --from=base /app/steps ./steps
 COPY --from=base /app/docs ./docs
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create non-root user with home directory
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser
 RUN chown -R appuser:appuser /app
+
+# Create and set permissions for Hugging Face cache directory
+RUN mkdir -p /app/.cache/huggingface && chown -R appuser:appuser /app/.cache
+
 USER appuser
+
+# Set Hugging Face cache directory environment variable
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 
 # Expose port
 EXPOSE 3000

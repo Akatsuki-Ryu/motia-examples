@@ -19,6 +19,8 @@ services:
       - ./docs:/app/docs:ro
       # Mount logs directory
       - ./logs:/app/logs
+      # Mount cache directory for Hugging Face models
+      - ./hf_cache:/app/.cache/huggingface
     depends_on:
       chromadb:
         condition: service_healthy
@@ -39,7 +41,7 @@ services:
       - CHROMA_SERVER_HTTP_PORT=8000
       - ANONYMIZED_TELEMETRY=false
     volumes:
-      - chromadb_data:/chroma/chroma
+      - ./chromadb_data:/chroma/chroma
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl localhost:8000/api/v1/heartbeat || exit 1"]
@@ -53,6 +55,8 @@ services:
 
 volumes:
   chromadb_data:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:
