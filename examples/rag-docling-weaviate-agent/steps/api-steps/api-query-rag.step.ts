@@ -1,5 +1,6 @@
 import { ApiRouteConfig, Handlers } from 'motia';
-import weaviate from 'weaviate-client';
+import { ChromaClient } from 'chromadb';
+import OpenAI from 'openai';
 import { RAGResponse } from '../../types/index';
 import { z } from 'zod';
 
@@ -16,56 +17,93 @@ export const config: ApiRouteConfig = {
   }),
 };
 
+const COLLECTION_NAME = 'books';
+
+const getChromaClient = () => {
+  const host = process.env.CHROMADB_HOST || 'localhost';
+  const port = process.env.CHROMADB_PORT || '8000';
+  
+  return new ChromaClient({
+    path: `http://${host}:${port}`,
+  });
+};
+
+const getQueryEmbedding = async (query: string) => {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  const response = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query,
+  });
+
+  return response.data[0].embedding;
+};
+
+const generateAnswer = async (query: string, context: string) => {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: 'Answer the following question using only the provided context. If the context does not contain enough information to answer the question, say so.',
+      },
+      {
+        role: 'user',
+        content: `Context: ${context}\n\nQuestion: ${query}`,
+      },
+    ],
+    max_tokens: 4096,
+  });
+
+  return response.choices[0]?.message?.content || 'No answer generated';
+};
+
 export const handler: Handlers['api-query-rag'] = async (req, { logger, emit }) => {
   const { query, limit } = req.body;
 
   logger.info('Processing RAG query', { query, limit });
 
-  // Initialize Weaviate client
-  const client = await weaviate.connectToWeaviateCloud(process.env.WEAVIATE_URL!, {
-    authCredentials: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY!),
-    headers: {
-      'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY!,
-      //"X-OpenAI-Organization": process.env.OPENAI_ORGANIZATION!,
-    },
-  });
+  // Initialize ChromaDB client
+  const client = getChromaClient();
 
   try {
-    // Get collection reference
-    const documentCollection = client.collections.get('Books');
+    // Get collection
+    const collection = await client.getCollection({ name: COLLECTION_NAME });
 
-    // Query using v3 syntax
-    // Prefer alpha.hosted.withNearText.generate where available, fallback to generate.nearText
-    let result: any;
-    try {
-      // v3 hosted alpha API shape
-      result = await (documentCollection as any).alpha.hosted.withNearText.generate({
-        query,
-        limit: limit,
-        singlePrompt: `Answer the following question using only the provided context: ${query}`,
-        fields: ['text', 'title', 'source', 'page'],
-        // metadata: ['distance'],
-      });
-    } catch {
-      // fallback to stable API
-      result = await (documentCollection as any).generate.nearText(
-        query,
-        { singlePrompt: `Answer the following question using only the provided context: ${query}` },
-        { limit, returnProperties: ['text', 'title', 'source', 'page'], returnMetadata: ['distance'] }
-      );
-    }
+    // Get query embedding
+    const queryEmbedding = await getQueryEmbedding(query);
 
-    const objects = (result?.objects ?? result?.data ?? result ?? []);
-    const chunks = objects.map((doc: any) => ({
-      text: (doc.properties?.text ?? doc.text ?? '') as string,
-      title: (doc.properties?.title ?? doc.title ?? 'Unknown') as string,
+    // Query ChromaDB for similar documents
+    const result = await collection.query({
+      queryEmbeddings: [queryEmbedding],
+      nResults: limit,
+      include: ['documents', 'metadatas', 'distances'],
+    });
+
+    // Extract results
+    const documents = result.documents?.[0] || [];
+    const metadatas = result.metadatas?.[0] || [];
+    const distances = result.distances?.[0] || [];
+
+    // Format chunks
+    const chunks = documents.map((doc, index) => ({
+      text: doc || '',
+      title: (metadatas[index] as any)?.title || 'Unknown',
       metadata: {
-        source: (doc.properties?.source ?? doc.source ?? 'unknown') as string,
-        page: Number(doc.properties?.page ?? doc.page ?? 1),
+        source: (metadatas[index] as any)?.source || 'unknown',
+        page: parseInt((metadatas[index] as any)?.page || '1', 10),
       },
     }));
 
-    const answer = (objects[0]?.generated ?? result?.generated ?? 'No answer generated') as string;
+    // Generate answer using retrieved context
+    const context = chunks.map(chunk => chunk.text).join('\n\n');
+    const answer = await generateAnswer(query, context);
 
     const response = RAGResponse.parse({ query, answer, chunks });
 
@@ -80,11 +118,12 @@ export const handler: Handlers['api-query-rag'] = async (req, { logger, emit }) 
       body: response,
     };
   } catch (error) {
-    logger.error('Error querying Weaviate', {
+    logger.error('Error querying ChromaDB', {
       error,
-      url: process.env.WEAVIATE_URL,
-      collection: 'Books',
-      hint: 'Ensure the Books collection exists and data is loaded via /api/rag/process-pdfs before querying.'
+      host: process.env.CHROMADB_HOST,
+      port: process.env.CHROMADB_PORT,
+      collection: COLLECTION_NAME,
+      hint: 'Ensure the books collection exists and data is loaded via /api/rag/process-pdfs before querying.'
     });
     return {
       status: 500,
@@ -93,7 +132,5 @@ export const handler: Handlers['api-query-rag'] = async (req, { logger, emit }) 
         message: error instanceof Error ? error.message : 'Unknown error',
       },
     };
-  } finally {
-    try { await client.close(); } catch {}
   }
 };

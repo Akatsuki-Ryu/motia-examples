@@ -1,6 +1,6 @@
-# PDF RAG Agent (Motia + Docling + Weaviate)
+# PDF RAG Agent (Motia + Docling + ChromaDB)
 
-This example builds a retrieval‑augmented pipeline: it ingests PDFs, chunks them with Docling, stores the chunks in Weaviate, and answers questions using Motia’s event‑driven workflow.
+This example builds a retrieval‑augmented pipeline: it ingests PDFs, chunks them with Docling, stores the chunks in ChromaDB, and answers questions using Motia's event‑driven workflow.
 
 ![rag-example](docs/images/rag-example.gif)
 
@@ -8,7 +8,7 @@ This example builds a retrieval‑augmented pipeline: it ingests PDFs, chunks th
 
 - PDF document processing and chunking
 - Built with [Motia Framework](https://github.com/motiadev/motia) for event-driven Architecture
-- Vector storage using [Weaviate](https://weaviate.io/)
+- Vector storage using [ChromaDB](https://www.trychroma.com/)
 - [Docling](https://github.com/docling-project/docling) for PDF parsing and hybrid chunking
 - Question answering using RAG pattern
 - [OpenAI](https://openai.com/) integration for embeddings and text generation
@@ -22,7 +22,7 @@ This example builds a retrieval‑augmented pipeline: it ingests PDFs, chunks th
 ### Option 2: Local Development
 - Node.js 18+
 - Python 3.10+
-- [Weaviate instance](https://weaviate.io/docs/installation.html)
+- [ChromaDB instance](https://docs.trychroma.com/getting-started)
 - [OpenAI API key](https://openai.com/api/)
 
 ## Setup
@@ -48,8 +48,7 @@ docker-compose up --build
 
 This will start:
 - **RAG Application** on `http://localhost:3000`
-- **Weaviate Vector Database** on `http://localhost:8080`
-- **Weaviate Console UI** on `http://localhost:3001`
+- **ChromaDB Vector Database** on `http://localhost:8000`
 
 5. The application will be ready when you see logs indicating all services are healthy.
 
@@ -63,8 +62,8 @@ npm install
 2. Create a `.env` file in the root directory with the following variables:
 ```env
 OPENAI_API_KEY=your_openai_api_key
-WEAVIATE_URL=https://<cluster>.weaviate.cloud
-WEAVIATE_API_KEY=your_weaviate_api_key
+CHROMADB_HOST=localhost
+CHROMADB_PORT=8000
 ```
 
 ## Development
@@ -92,14 +91,14 @@ npm run dev
 
 ## Project Structure
 ```
-rag-docling-weaviate-agent/
+rag-docling-chromadb-agent/
 ├── steps/
 │   ├── api-steps/          # API endpoints for PDF processing and querying
 │   │   ├── api-process-pdfs.step.ts
 │   │   └── api-query-rag.step.ts
 │   └── event-steps/        # Background processing steps
-│       ├── init-weaviate.step.ts
-│       ├── load-weaviate.step.ts
+│       ├── init-chromadb.step.ts
+│       ├── load-chromadb.step.ts
 │       ├── process-pdfs.step.py
 │       └── read-pdfs.step.ts
 ├── types/               # TypeScript type definitions
@@ -118,9 +117,9 @@ The project follows a modular structure aligned with Motia Framework conventions
 ## How it Works
 
 1. **Document Processing**: The system processes the PDF using Docling and HybridChunker to split it into chunks
-1. **Vector Storage**: Text chunks are stored in Weaviate with OpenAI text2vec/generative
+1. **Vector Storage**: Text chunks are embedded using OpenAI embeddings and stored in ChromaDB
 1. **Query Processing**: User queries are processed using RAG:
-   - Query is embedded and similar chunks are retrieved from Weaviate
+   - Query is embedded and similar chunks are retrieved from ChromaDB
    - Retrieved context and query are sent to OpenAI for answer generation
    - Response is returned to the user
 
@@ -148,7 +147,7 @@ curl -X POST http://localhost:3000/api/rag/process-pdfs \
 
 curl -X POST http://localhost:3000/api/rag/process-pdfs \
   -H "Content-Type: application/json" \
-  -d '{"folderPath":"/absolute/path/to/rag-docling-weaviate-agent/docs/pdfs"}'
+  -d '{"folderPath":"/absolute/path/to/rag-docling-chromadb-agent/docs/pdfs"}'
 ```
 
 #### Query Examples
@@ -161,7 +160,7 @@ curl -X POST http://localhost:3000/api/rag/query \
 
 ![query-output](docs/images/query-output.png)
 
-If you paste a repo‑relative path like `examples/rag-docling-weaviate-agent/docs/pdfs` while you are already inside this example, the step automatically normalizes it to avoid ENOENT errors.
+If you paste a repo‑relative path like `examples/rag-docling-chromadb-agent/docs/pdfs` while you are already inside this example, the step automatically normalizes it to avoid ENOENT errors.
 
 ## Docker Services
 
@@ -169,11 +168,10 @@ The Docker Compose setup includes:
 
 ### Main Services
 - **rag-app**: The main RAG application (Node.js + Python)
-- **weaviate**: Vector database for storing document embeddings
-- **weaviate-ui**: Web interface for Weaviate database management
+- **chromadb**: Vector database for storing document embeddings
 
 ### Volumes
-- **weaviate_data**: Persistent storage for Weaviate database
+- **chromadb_data**: Persistent storage for ChromaDB database
 - **./docs**: Read-only mount for PDF documents
 - **./logs**: Application logs directory
 
@@ -191,16 +189,16 @@ docker-compose ps
 
 # View logs
 docker-compose logs rag-app
-docker-compose logs weaviate
+docker-compose logs chromadb
 ```
 
-**Weaviate connection issues:**
+**ChromaDB connection issues:**
 ```bash
-# Check if Weaviate is healthy
-curl http://localhost:8080/v1/.well-known/ready
+# Check if ChromaDB is healthy
+curl http://localhost:8000/api/v1/heartbeat
 
-# Restart Weaviate service
-docker-compose restart weaviate
+# Restart ChromaDB service
+docker-compose restart chromadb
 ```
 
 **Application build issues:**
