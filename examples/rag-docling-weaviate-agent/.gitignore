@@ -36,3 +36,7 @@ dist/
 ._*
 .Spotlight-V100
 .Trashes
+
+#chromadb data
+chromadb_data/
+hf_cache/
